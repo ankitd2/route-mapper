@@ -5,30 +5,37 @@
 ```
 User action (click map / enter distance / press Generate)
   ↓
-Zustand store (routeStore.ts) — generateRoutes()
+Zustand store → generateRoutes()
   ↓
 POST /api/routes/generate  (browser → Next.js server)
   ↓
-Zod validation (schemas.ts)
+Zod validation (schemas.ts) — rejects bad input early
   ↓
 generateMultipleRoutes() — 3 concurrent ORS requests (seeds 0, 1, 2)
   ↓
-ORS API: POST /v2/directions/foot-walking/geojson
+fetchOverpassData()  — 1 combined bbox query (crossings + sidewalks)
+  ↓ [Overpass failure → null → graceful degradation, not an error]
+scoreRoute() × 3  — pure functions, no network calls
   ↓
-parseRouteFeature() — extracts elevation profile, instructions, waypoints
+Sort ScoredRoute[] by overall score descending
   ↓
-{ routes: GeneratedRoute[] } → browser
+{ routes: ScoredRoute[] } → browser
   ↓
 Zustand store updated → React re-renders map + sidebar
+
+Preference slider change (no API call):
+  setPreferences() → recalculate overall via calculateOverall() → re-sort → re-render
 ```
+
+---
 
 ## API Reference
 
 ### OpenRouteService (ORS)
 
 **Endpoint:** `POST https://api.openrouteservice.org/v2/directions/foot-walking/geojson`
-**Auth:** `Authorization: <api_key>` header
-**Free tier:** 2,000 req/day · 40 req/min (we cap at 1,900/day · 38/min)
+**Auth:** `Authorization: <api_key>` header (server-side only, never exposed to browser)
+**Free tier:** 2,000 req/day · 40 req/min (self-capped at 1,900/day · 38/min in `client.ts`)
 **Sign up:** https://openrouteservice.org/dev/#/login
 
 **Request body:**
@@ -39,11 +46,7 @@ Zustand store updated → React re-renders map + sidebar
   "elevation": "true",
   "extra_info": ["steepness", "surface", "waycategory"],
   "options": {
-    "round_trip": {
-      "length": 5000,
-      "points": 3,
-      "seed": 0
-    }
+    "round_trip": { "length": 5000, "points": 3, "seed": 0 }
   },
   "instructions": true
 }
@@ -51,14 +54,12 @@ Zustand store updated → React re-renders map + sidebar
 
 Key parameters:
 
-- `coordinates` — single point `[lng, lat]`; ORS generates a loop back to it
-- `elevation: "true"` — adds a 3rd coordinate `[lng, lat, elevation_meters]` to every point
-- `round_trip.length` — target distance in meters
-- `round_trip.seed` — integer controlling route shape; different seeds = different routes
-- `round_trip.points` — number of intermediate waypoints (3 creates a triangular-ish loop)
-- `extra_info` — returns per-segment metadata: steepness class, surface type, road category
+- `coordinates` — single `[lng, lat]`; ORS generates a loop back to start
+- `elevation: "true"` — adds a 3rd coord `[lng, lat, elev_m]` to every point
+- `round_trip.seed` — controls route shape; seeds 0/1/2 give 3 different routes
+- `extra_info` — per-segment surface/steepness/road-category metadata (available for Phase 4)
 
-**Response (GeoJSON FeatureCollection):**
+**Response (abbreviated):**
 
 ```json
 {
@@ -66,133 +67,175 @@ Key parameters:
     "geometry": { "type": "LineString", "coordinates": [[lng, lat, elev], ...] },
     "properties": {
       "summary": { "distance": 5123.4, "duration": 3842.1 },
-      "ascent": 42.3,
-      "descent": 42.1,
-      "segments": [{ "steps": [{ "instruction": "Turn left", "distance": 120, "type": 1, "way_points": [0, 8] }] }],
-      "extras": { "steepness": {...}, "surface": {...}, "waycategory": {...} }
+      "ascent": 42.3, "descent": 42.1,
+      "segments": [{ "steps": [{ "instruction": "Turn left", "distance": 120, "type": 1 }] }]
     }
   }]
 }
 ```
 
-`summary.distance` and `summary.duration` are the actual route values (not target). ORS approximates the target distance; actual may vary ±10%.
+`summary.distance` is actual meters (target ±10%). Elevation extracted via Haversine from 3D coordinates.
+
+---
+
+### Overpass API
+
+**URL:** `POST https://overpass-api.de/api/interpreter`
+**Auth:** None — free public API, no key required
+**Docs:** https://wiki.openstreetmap.org/wiki/Overpass_API/Overpass_QL
+**Be respectful:** one query per user action, `User-Agent` header set, single combined bbox
+
+We fetch **all scoring data in one query** per generation — crossings + sidewalks together:
+
+```
+[out:json][timeout:25];
+(
+  node["highway"="crossing"](south,west,north,east);
+  way["footway"="sidewalk"](south,west,north,east);
+  way["sidewalk"~"left|right|both"](south,west,north,east);
+);
+out geom;
+```
+
+`out geom` returns full `lat/lon` per node on ways — required for `turf.nearestPointOnLine`.
+The bbox covers all 3 routes combined + 200m padding (`BBOX_PADDING_DEG = 0.002`).
+
+**Response shape:**
+
+```json
+{
+  "elements": [
+    { "type": "node", "id": 123, "lat": 42.36, "lon": -71.05, "tags": { "highway": "crossing" } },
+    { "type": "way",  "id": 456, "geometry": [{ "lat": ..., "lon": ... }], "tags": { "footway": "sidewalk" } }
+  ]
+}
+```
+
+Parsed in `client.ts` into `{ crossingNodes: OverpassNode[], sidewalkWays: OverpassWay[] }`.
+
+---
 
 ### OpenFreeMap (Map Tiles)
 
 **URL:** `https://tiles.openfreemap.org/styles/liberty`
-**No API key.** Serves vector tiles from OpenStreetMap data. Used by MapLibre GL for rendering.
+**Auth:** None — free, no key
+**Source:** OpenStreetMap data, rendered as vector tiles by MapLibre GL
 
-### Overpass API _(Phase 2)_
-
-**URL:** `https://overpass-api.de/api/interpreter`
-**No API key.** Query language for OpenStreetMap data.
-
-Example — fetch sidewalks within a bounding box:
-
-```
-[out:json];
-way["footway"="sidewalk"]({{bbox}});
-out geom;
-```
-
-Example — fetch intersections near a route:
-
-```
-[out:json];
-node["highway"="crossing"]({{bbox}});
-out;
-```
-
-Be respectful: cache results, add `User-Agent`, avoid hammering. Consider a 1s delay between queries.
+---
 
 ### Browser Geolocation API
 
 No account needed. User must grant permission. Used in `src/hooks/useGeolocation.ts`.
 
 - `enableHighAccuracy: true` — uses GPS when available
-- `timeout: 10000` — 10s max
+- `timeout: 10000` — 10s max wait
 - `maximumAge: 300000` — accepts cached position up to 5 min old
 
 ---
 
-## Scoring System _(Phase 2 Design)_
+## Scoring System
 
-All scoring produces a 0–100 value where **100 is best** for a walker/runner (flat, safe, scenic).
+All scores are integers **0–100 where 100 is best**. The value **-1 is a sentinel** meaning "data unavailable" — used when Overpass is down. `calculateOverall()` skips -1 values and re-normalizes remaining weights.
 
-### Elevation Score
+### Flatness Score
 
-Measures how flat the route is. Derived from ORS `ascent` value (total meters gained).
+_Always available — derived from ORS data._
 
-```
-gainPerMile = ascent_meters / route_miles
-score = max(0, 100 - gainPerMile * 2)
-```
-
-Examples: 0 ft/mi gain → 100. 50 ft/mi gain → 100 (gentle). 150 ft/mi gain → ~9 (hilly). Capped at 0.
-
-### Intersection Score
-
-Measures how many road crossings interrupt the route. Fetched from Overpass.
+Measures how flat the route is. High score = good for casual walkers, recovery runs.
 
 ```
-crossingsPerMile = crossing_count / route_miles
-score = max(0, 100 - crossingsPerMile * 5)
+gainFtPerMile = (ascent_m / 0.3048) / (distance_m / 1609.344)
+flatness = max(0, 100 − gainFtPerMile × 1.5)
 ```
 
-High crossings = lower score. A route with 4 crossings/mile scores 80.
+| Gain ft/mi | Score | Example                       |
+| ---------- | ----- | ----------------------------- |
+| 0          | 100   | Esplanade, Charles River path |
+| 33         | 50    | Gentle rolling hills          |
+| 67+        | 0     | Significant climbing          |
+
+### Health Score
+
+_Always available — derived from ORS data._
+
+Measures workout quality / elevation challenge. High score = good for training.
+
+```
+health = min(100, 20 + gainFtPerMile × 1.2)
+```
+
+20 is the baseline (any walking has health benefit). Flatness and Health are **intentional opposites** — preference sliders let users express their trade-off.
+
+| Gain ft/mi | Score |
+| ---------- | ----- |
+| 0          | 20    |
+| 50         | 80    |
+| 67+        | 100   |
+
+### Safety Score
+
+_Requires Overpass data. Returns -1 if Overpass is unavailable._
+
+Fewer road crossings = safer, less interrupted run. Crossings within 20m of the route are counted.
+
+```
+crossingsPerMile = nearby_crossing_count / (distance_m / 1609.344)
+safety = max(0, 100 − crossingsPerMile × 8)
+```
+
+| Crossings/mi | Score |
+| ------------ | ----- |
+| 0            | 100   |
+| 6            | 52    |
+| 12+          | ~4    |
 
 ### Sidewalk Coverage Score
 
-Percentage of the route that has adjacent sidewalk coverage. Requires Overpass sidewalk geometry + Turf.js buffer intersection.
+_Requires Overpass data. Returns -1 if Overpass is unavailable._
+
+Percentage of the route that has a nearby sidewalk. Samples the route every 30m, checks if any sidewalk way is within 15m.
 
 ```
-score = (metersWithSidewalk / totalRouteMeters) * 100
+coverage = (sample_points_with_nearby_sidewalk / total_sample_points) × 100
 ```
-
-Implementation: Buffer the route line by 15m, intersect with sidewalk ways from Overpass, measure overlap ratio.
-
-### Scenic Score _(Phase 3 research)_
-
-Potential data sources (all free, varying quality):
-
-- OSM tags: `natural=wood`, `leisure=park`, `waterway=river` — buffer + intersect with route
-- OSM `landuse=grass/forest` — area coverage along route
-- Street View imagery analysis — complex, likely out of scope for now
-
-Initial implementation: count OSM natural/park features within 100m of route, normalize to 0–100.
 
 ### Overall / Composite Score
 
-Weighted average of the four component scores. Default weights:
+Weighted average of available component scores. Weights are user-facing integers 0–10, normalized to sum 1.0 before calculation.
 
 ```
-overall = (elevation × 0.30) + (intersections × 0.25) + (sidewalk × 0.25) + (scenic × 0.20)
+available = [d for d in dimensions if d.score != -1]
+totalWeight = sum(d.weight for d in available)
+overall = round(sum(d.score × d.weight/totalWeight for d in available))
 ```
 
-These weights will be exposed as user preferences (`RoutePreferences` in `src/types/route.ts`). A user who wants a flat run raises `flatnessWeight`; one who wants a scenic stroll raises `scenicWeight`. The weights are normalized to sum to 1.0 before calculating.
+If all weights are 0, falls back to equal weighting. If all scores are -1, returns 0.
 
-### Implementation Location
-
-All scoring logic goes in `src/lib/scoring/` as pure functions with no network calls. Network calls (Overpass queries) go in `src/services/overpass/`. The API route (`src/app/api/routes/generate/route.ts`) orchestrates: generate routes via ORS → fetch enrichment data via Overpass → score each route → return `ScoredRoute[]`.
+**Recalculation:** The server calculates component scores (flatness, health, safety, sidewalk). `overall` is recalculated **client-side** in `setPreferences()` whenever sliders change — no API call needed.
 
 ---
 
 ## Security
 
-- `ORS_API_KEY` is only ever read in `src/services/openrouteservice/client.ts`, which runs server-side only
-- Zod validates all API input before it touches any service
-- Security headers set in `next.config.ts`: `X-Frame-Options`, CSP, `Permissions-Policy: geolocation=(self)`
-- Geolocation is requested lazily (only when user clicks "Use Current Location"), never on page load
+- `ORS_API_KEY` only read in `src/services/openrouteservice/client.ts` (server-side only)
+- Zod validates all API input before any service call
+- Security headers in `next.config.ts`: `X-Frame-Options`, CSP, `Permissions-Policy: geolocation=(self)`
+- Geolocation requested lazily (user click only), never on page load
+- Overpass gets a descriptive `User-Agent` header — good practice for free public APIs
 
 ---
 
 ## Testing
 
 ```bash
-npm test              # run all tests
-npm test -- --watch   # watch mode
+npm test              # run all tests once
+npm test -- --watch   # watch mode during development
 ```
 
-Tests live in `src/**/*.test.ts`. The scoring functions in `src/lib/scoring/` should have full unit test coverage — they are pure functions with no side effects, making them easy to test.
+Tests live alongside source in `src/**/*.test.ts`. Current coverage:
 
-Test utilities: Vitest + Testing Library + jsdom. Setup in `src/test/setup.ts`.
+| File                              | Tests                                             |
+| --------------------------------- | ------------------------------------------------- |
+| `src/lib/scoring/scoring.test.ts` | 22 tests — elevation, safety, sidewalk, composite |
+
+Scoring functions are pure (no network, no side effects) → easy to test exhaustively. New scoring dimensions should have tests before wiring into the API route.

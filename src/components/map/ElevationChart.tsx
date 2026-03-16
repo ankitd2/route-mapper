@@ -68,13 +68,13 @@ export function ElevationChart({ profile, className = '' }: ElevationChartProps)
         <path d={areaPath} fill="url(#elevGradient)" />
 
         {/* Line */}
-        <path d={linePath} fill="none" stroke="#3b82f6" strokeWidth={1.5} />
+        <path d={linePath} fill="none" stroke="#10b981" strokeWidth={1.5} />
 
         {/* Gradient definition */}
         <defs>
           <linearGradient id="elevGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.3} />
-            <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.05} />
+            <stop offset="0%" stopColor="#10b981" stopOpacity={0.25} />
+            <stop offset="100%" stopColor="#10b981" stopOpacity={0.03} />
           </linearGradient>
         </defs>
 

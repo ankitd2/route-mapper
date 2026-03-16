@@ -9,16 +9,27 @@ export interface RouteRequest {
 }
 
 /**
- * User-adjustable scoring weights (Phase 2).
- * Each value is 0–1; weights are normalized to sum to 1.0 before scoring.
- * Stored per-user in Phase 3 (database).
+ * User-adjustable scoring weights.
+ * Values are integers 0–10 (user-facing); normalized to sum 1.0 internally before scoring.
+ * scenicWeight is reserved but ignored in the composite until Phase 4.
+ * Persisted to localStorage via Zustand persist middleware.
  */
 export interface RoutePreferences {
-  scenicWeight: number; // prefer parks, nature, waterways
-  flatnessWeight: number; // prefer low elevation gain
+  flatnessWeight: number; // prefer low elevation gain (casual walkers, recovery)
+  healthWeight: number; // prefer elevation challenge (workout quality, calorie burn)
+  safetyWeight: number; // prefer fewer road crossings
   sidewalkWeight: number; // prefer routes with sidewalk coverage
-  avoidBusyRoads: boolean; // penalize routes using high-traffic roads
+  scenicWeight: number; // reserved — Phase 4 (parks/nature proximity)
 }
+
+/** Default weights — equal across the 4 active dimensions */
+export const DEFAULT_PREFERENCES: RoutePreferences = {
+  flatnessWeight: 5,
+  healthWeight: 5,
+  safetyWeight: 5,
+  sidewalkWeight: 5,
+  scenicWeight: 0, // inactive until Phase 4
+};
 
 /** A single generated route as returned by ORS and parsed by our client */
 export interface GeneratedRoute {
@@ -27,7 +38,7 @@ export interface GeneratedRoute {
   distance: number; // actual meters (from ORS summary)
   duration: number; // estimated seconds at walking pace
   elevationProfile: ElevationPoint[]; // one point per ORS coordinate, with cumulative distance
-  ascent: number; // total meters gained (used in elevation score)
+  ascent: number; // total meters gained
   descent: number; // total meters lost
   bbox: [number, number, number, number]; // [minLng, minLat, maxLng, maxLat]
   waypoints: Coordinate[]; // key turn points along the route
@@ -44,22 +55,26 @@ export interface RouteInstruction {
 }
 
 /**
- * Per-dimension route scores (Phase 2).
- * All values 0–100 where 100 is best for a walker/runner.
+ * Per-dimension route scores. All active values 0–100 where 100 is best.
+ * -1 is a sentinel meaning "not calculated" — used when Overpass data is unavailable
+ * or when a dimension is deferred (scenic). calculateOverall() skips -1 values
+ * and normalizes remaining weights to 1.0 automatically.
  *
- * Scoring formulas (see docs/DEVELOPER.md for full detail):
- *   elevation    = max(0, 100 - gainPerMile × 2)
- *   intersections = max(0, 100 - crossingsPerMile × 5)
- *   sidewalk     = (coveredMeters / totalMeters) × 100
- *   scenic       = OSM natural/park feature density near route (0–100)
- *   overall      = weighted average using RoutePreferences weights
+ * Formulas (full detail in docs/DEVELOPER.md):
+ *   flatness  = max(0, 100 − gainFt/mi × 1.5)        always available (ORS data)
+ *   health    = min(100, 20 + gainFt/mi × 1.2)        always available (ORS data)
+ *   safety    = max(0, 100 − crossings/mi × 8)        requires Overpass
+ *   sidewalk  = samplesWithin15m / totalSamples × 100  requires Overpass
+ *   scenic    = -1 sentinel until Phase 4
+ *   overall   = Σ(score_i × normalizedWeight_i), client-calculated
  */
 export interface RouteScore {
-  overall: number; // composite weighted score
-  elevation: number; // flatness: 100 = no gain, 0 = very hilly
-  intersections: number; // safety: 100 = no crossings, 0 = many crossings
-  sidewalkCoverage: number; // 100 = full sidewalk, 0 = no sidewalk
-  scenic: number; // 100 = parks/nature throughout, 0 = urban only
+  overall: number; // composite weighted score, recalculated client-side
+  flatness: number; // 100 = perfectly flat, 0 = very hilly
+  health: number; // 100 = maximum workout challenge, 20 = flat baseline
+  safety: number; // 100 = no road crossings, 0 = frequent crossings
+  sidewalkCoverage: number; // 100 = full sidewalk coverage, 0 = none
+  scenic: number; // -1 until Phase 4
 }
 
 /** A GeneratedRoute enriched with Phase 2 scoring data */

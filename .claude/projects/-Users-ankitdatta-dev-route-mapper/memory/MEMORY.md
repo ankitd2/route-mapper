@@ -1,0 +1,2 @@
+- [user_preferences](user_preferences.md) - Imperial units (miles/feet), based in Boston
+- [feedback_commits](feedback_commits.md) - Never commit or push — user reviews and commits all code themselves

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import Map, { NavigationControl, GeolocateControl, Marker } from 'react-map-gl/maplibre';
 import type { MapRef, MapLayerMouseEvent } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -25,6 +25,35 @@ export function MapView({ startPoint, routes, selectedRouteIndex, onMapClick }: 
     },
     [onMapClick],
   );
+
+  // When startPoint is set outside the current viewport (e.g. via address search),
+  // fly the map to it. Map clicks are already in-view so they don't trigger this.
+  useEffect(() => {
+    if (!mapRef.current || !startPoint || routes.length > 0) return;
+    const bounds = mapRef.current.getBounds();
+    if (!bounds.contains([startPoint.lng, startPoint.lat])) {
+      mapRef.current.flyTo({ center: [startPoint.lng, startPoint.lat], zoom: 14, duration: 700 });
+    }
+  }, [startPoint, routes.length]);
+
+  // Fit map to selected route bbox when selection changes
+  useEffect(() => {
+    if (!mapRef.current || routes.length === 0) return;
+    const route = routes[selectedRouteIndex];
+    if (!route?.bbox) return;
+    const [minLng, minLat, maxLng, maxLat] = route.bbox;
+    mapRef.current.fitBounds(
+      [
+        [minLng, minLat],
+        [maxLng, maxLat],
+      ],
+      {
+        padding: { top: 80, bottom: 200, left: 320, right: 80 },
+        duration: 500,
+        maxZoom: 15,
+      },
+    );
+  }, [selectedRouteIndex, routes]);
 
   return (
     <Map
@@ -53,8 +82,14 @@ export function MapView({ startPoint, routes, selectedRouteIndex, onMapClick }: 
 
       {startPoint && (
         <Marker longitude={startPoint.lng} latitude={startPoint.lat} anchor="bottom">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white shadow-lg">
-            S
+          <div className="drop-shadow-lg">
+            <svg width="28" height="36" viewBox="0 0 28 36" fill="none">
+              <path
+                d="M14 0C6.268 0 0 6.268 0 14c0 9.625 12.195 21.018 13.25 22.02a1 1 0 0 0 1.5 0C15.805 35.018 28 23.625 28 14 28 6.268 21.732 0 14 0z"
+                fill="#18181b"
+              />
+              <circle cx="14" cy="14" r="5" fill="white" />
+            </svg>
           </div>
         </Marker>
       )}

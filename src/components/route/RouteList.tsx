@@ -1,10 +1,10 @@
 'use client';
 
-import type { GeneratedRoute } from '@/types/route';
+import type { ScoredRoute } from '@/types/route';
 import { RouteCard } from './RouteCard';
 
 interface RouteListProps {
-  routes: GeneratedRoute[];
+  routes: ScoredRoute[];
   selectedIndex: number;
   onSelectRoute: (index: number) => void;
 }
@@ -14,8 +14,8 @@ export function RouteList({ routes, selectedIndex, onSelectRoute }: RouteListPro
 
   return (
     <div className="space-y-3">
-      <h3 className="text-sm font-semibold text-gray-900">
-        {routes.length} Route{routes.length !== 1 ? 's' : ''} Found
+      <h3 className="text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
+        {routes.length} Route{routes.length !== 1 ? 's' : ''} Generated
       </h3>
       {routes.map((route, index) => (
         <RouteCard
