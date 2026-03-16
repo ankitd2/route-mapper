@@ -1,36 +1,103 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Route Mapper
 
-## Getting Started
+A health/fitness web app for generating walk and run routes from any starting point. Enter a distance (or time), pick a location, and get multiple route options scored by elevation, safety, and scenery.
 
-First, run the development server:
+**Current status:** Phase 1 complete — route generation working. See [`docs/PHASES.md`](docs/PHASES.md).
+
+---
+
+## Quick Start
 
 ```bash
+# 1. Install dependencies
+npm install
+
+# 2. Add your ORS API key (free at openrouteservice.org)
+cp .env.example .env.local
+# edit .env.local → ORS_API_KEY=your_key_here
+
+# 3. Run dev server (no other servers needed)
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000). The map defaults to Boston.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run build    # production build + type-check
+npm test         # run unit tests
+npm run lint     # eslint check
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## APIs Used
 
-To learn more about Next.js, take a look at the following resources:
+| API                                              | Purpose                                          | Key Required                                              | Free Tier                   |
+| ------------------------------------------------ | ------------------------------------------------ | --------------------------------------------------------- | --------------------------- |
+| [OpenRouteService](https://openrouteservice.org) | Route generation with elevation                  | Yes — [sign up](https://openrouteservice.org/dev/#/login) | 2,000 req/day, 40 req/min   |
+| [OpenFreeMap](https://openfreemap.org)           | Map tiles (OpenStreetMap data)                   | No                                                        | Unlimited                   |
+| [Overpass API](https://overpass-api.de)          | OSM data for sidewalks/intersections _(Phase 2)_ | No                                                        | Rate-limited, be respectful |
+| Browser Geolocation API                          | User's current location                          | No — user consent                                         | N/A                         |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+**Required accounts:** Only OpenRouteService. Sign up free → create a token → paste into `.env.local`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+---
 
-## Deploy on Vercel
+## Tech Stack
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Layer      | Tool                       | Why                                                            |
+| ---------- | -------------------------- | -------------------------------------------------------------- |
+| Framework  | Next.js 15 (App Router)    | Server-side API routes keep ORS key secret; file-based routing |
+| UI         | React 19 + Tailwind CSS v4 | Component model; utility-first CSS                             |
+| Map        | MapLibre GL + react-map-gl | Open-source, WebGL-rendered, no API key                        |
+| State      | Zustand                    | Simple global store; no boilerplate                            |
+| Geo math   | Turf.js                    | Spatial operations (buffering, distance, intersection checks)  |
+| Validation | Zod                        | Runtime schema validation on API routes                        |
+| Language   | TypeScript (strict)        | Catches bugs at compile time                                   |
+| Testing    | Vitest + Testing Library   | Fast unit tests                                                |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+
+## Project Structure
+
+```
+src/
+  app/
+    api/routes/generate/   ← POST /api/routes/generate (server-side, key is safe here)
+    explore/               ← /explore page
+    page.tsx               ← / landing page
+  components/
+    map/                   ← MapLibre components (client-side)
+    forms/                 ← GenerateRouteForm
+    route/                 ← RouteCard, RouteList
+  services/
+    openrouteservice/      ← ORS API client + types
+  stores/
+    routeStore.ts          ← Zustand global state
+  types/
+    geo.ts                 ← Coordinate, BBox, ElevationPoint
+    route.ts               ← GeneratedRoute, RouteScore, ScoredRoute
+  utils/
+    constants.ts           ← API URLs, distance limits, map defaults
+    format.ts              ← Imperial unit formatters (miles, feet)
+  lib/
+    validation/schemas.ts  ← Zod schemas for API input
+  hooks/
+    useGeolocation.ts      ← Browser geolocation wrapper
+```
+
+---
+
+## Environment Variables
+
+| Variable      | Required | Description                                             |
+| ------------- | -------- | ------------------------------------------------------- |
+| `ORS_API_KEY` | Yes      | OpenRouteService API key. Never exposed to the browser. |
+
+---
+
+## Further Reading
+
+- [`docs/PHASES.md`](docs/PHASES.md) — Phase progress and what's next
+- [`docs/DEVELOPER.md`](docs/DEVELOPER.md) — Architecture, data flow, scoring design, API details
+- [`CLAUDE.md`](CLAUDE.md) — Context file for AI-assisted development

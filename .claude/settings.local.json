@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /Users/ankitdatta/dev/route-mapper -type f -name .*)",
+      "WebSearch",
+      "WebFetch(domain:giscience.github.io)",
+      "WebFetch(domain:openrouteservice.org)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:ask.openrouteservice.org)",
+      "WebFetch(domain:wiki.openstreetmap.org)",
+      "Bash(npx create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --turbopack --import-alias \"@/*\" --use-npm)",
+      "Bash(npm run:*)"
+    ]
+  }
+}
