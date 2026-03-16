@@ -1,4 +1,5 @@
-import type { FeatureCollection, Feature, LineString } from 'geojson';
+// ORS types use string literals ('Feature', 'LineString') rather than the GeoJSON
+// generic types — no geojson imports needed here.
 
 export interface ORSDirectionsRequest {
   coordinates: [number, number][];

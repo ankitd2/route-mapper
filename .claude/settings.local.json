@@ -9,7 +9,8 @@
       "WebFetch(domain:ask.openrouteservice.org)",
       "WebFetch(domain:wiki.openstreetmap.org)",
       "Bash(npx create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --turbopack --import-alias \"@/*\" --use-npm)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(npm test:*)"
     ]
   }
 }

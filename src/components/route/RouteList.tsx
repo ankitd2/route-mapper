@@ -1,10 +1,10 @@
 'use client';
 
-import type { GeneratedRoute } from '@/types/route';
+import type { ScoredRoute } from '@/types/route';
 import { RouteCard } from './RouteCard';
 
 interface RouteListProps {
-  routes: GeneratedRoute[];
+  routes: ScoredRoute[];
   selectedIndex: number;
   onSelectRoute: (index: number) => void;
 }

@@ -12,8 +12,10 @@ export function GenerateRouteForm() {
     targetDistance,
     isGenerating,
     error,
+    preferences,
     setStartPoint,
     setTargetDistance,
+    setPreferences,
     generateRoutes,
   } = useRouteStore();
   const { position, loading: geoLoading, error: geoError, requestLocation } = useGeolocation();
@@ -75,6 +77,53 @@ export function GenerateRouteForm() {
         </div>
       </div>
 
+      {/* Route Preferences — collapsible, persisted to localStorage */}
+      <details className="group rounded-lg border border-gray-200 bg-white">
+        <summary className="flex cursor-pointer items-center justify-between px-4 py-3 text-sm font-medium text-gray-700 select-none hover:bg-gray-50">
+          Route Preferences
+          {/* Chevron rotates when open */}
+          <svg
+            className="h-4 w-4 text-gray-400 transition-transform group-open:rotate-180"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </summary>
+
+        <div className="space-y-4 border-t border-gray-100 px-4 py-4">
+          <p className="text-xs text-gray-500">
+            Adjust what matters most. Routes re-rank instantly as you move sliders.
+          </p>
+          <PreferenceSlider
+            label="Flatness"
+            description="Prefer flatter routes (casual walkers, recovery)"
+            value={preferences.flatnessWeight}
+            onChange={(v) => setPreferences({ flatnessWeight: v })}
+          />
+          <PreferenceSlider
+            label="Health / Workout"
+            description="Prefer elevation challenge (calorie burn, cardio)"
+            value={preferences.healthWeight}
+            onChange={(v) => setPreferences({ healthWeight: v })}
+          />
+          <PreferenceSlider
+            label="Safety"
+            description="Prefer fewer road crossings"
+            value={preferences.safetyWeight}
+            onChange={(v) => setPreferences({ safetyWeight: v })}
+          />
+          <PreferenceSlider
+            label="Sidewalk Coverage"
+            description="Prefer routes with dedicated sidewalks"
+            value={preferences.sidewalkWeight}
+            onChange={(v) => setPreferences({ sidewalkWeight: v })}
+          />
+        </div>
+      </details>
+
       {/* Generate Button */}
       <button
         onClick={generateRoutes}
@@ -97,6 +146,36 @@ export function GenerateRouteForm() {
           {error}
         </div>
       )}
+    </div>
+  );
+}
+
+interface PreferenceSliderProps {
+  label: string;
+  description: string;
+  value: number;
+  onChange: (value: number) => void;
+}
+
+/** A labeled 0–10 integer slider for one preference weight */
+function PreferenceSlider({ label, description, value, onChange }: PreferenceSliderProps) {
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between">
+        <span className="text-xs font-medium text-gray-700">{label}</span>
+        <span className="text-xs text-gray-500 tabular-nums">{value}/10</span>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={10}
+        step={1}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full accent-blue-600"
+        title={description}
+      />
+      <p className="mt-0.5 text-[10px] text-gray-400">{description}</p>
     </div>
   );
 }

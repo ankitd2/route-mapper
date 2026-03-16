@@ -1,0 +1,50 @@
+# CI pipeline — runs on every push and pull request.
+#
+# Checks:
+#   1. Lint — ESLint must pass (catches code quality issues)
+#   2. Test — Vitest unit tests must pass
+#   3. Build — TypeScript compile + Next.js build must succeed
+#
+# Why this order: lint is fastest, build is slowest. Fail early, fail cheap.
+# The ORS_API_KEY secret is needed for the build step (Next.js validates env
+# usage at build time). Add it in: GitHub repo → Settings → Secrets → Actions.
+
+name: CI
+
+on:
+  push:
+    branches: [main, 'feature/**', 'phase-*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    name: Lint · Test · Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'       # caches node_modules between runs — much faster
+
+      - name: Install dependencies
+        run: npm ci           # ci = clean install, uses package-lock.json exactly
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test -- --run --passWithNoTests   # --run = single pass, no watch mode
+
+      - name: Build
+        run: npm run build
+        env:
+          # Needed so Next.js build doesn't fail on missing env var.
+          # Add ORS_API_KEY as a repo secret (Settings → Secrets → Actions).
+          # It is NOT exposed in browser — only used server-side at runtime.
+          ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
