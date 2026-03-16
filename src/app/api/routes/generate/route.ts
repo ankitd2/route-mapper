@@ -17,9 +17,15 @@
  *
  * Overpass failures degrade gracefully: routes are still returned with
  * elevation-based scores; safety/sidewalk show as -1 (UI displays "—").
+ *
+ * Dev fixture modes (set in .env.local):
+ *   USE_FIXTURES=true     — return saved fixture data, skip ORS + Overpass entirely
+ *   CAPTURE_FIXTURES=true — run normally, then write response to src/fixtures/routes.json
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import fs from 'fs/promises';
+import path from 'path';
 import {
   generateMultipleRoutes,
   ORSRateLimitError,
@@ -29,6 +35,8 @@ import { fetchOverpassData } from '@/services/overpass/client';
 import { scoreRoute } from '@/lib/scoring';
 import { generateRouteSchema } from '@/lib/validation/schemas';
 import type { ScoredRoute } from '@/types/route';
+
+const FIXTURES_PATH = path.join(process.cwd(), 'src/fixtures/routes.json');
 
 export async function POST(request: NextRequest) {
   try {
@@ -41,6 +49,13 @@ export async function POST(request: NextRequest) {
         { error: 'Invalid request', details: parsed.error.issues },
         { status: 400 },
       );
+    }
+
+    // DEV: Return fixture data without calling ORS or Overpass
+    if (process.env.USE_FIXTURES === 'true') {
+      const raw = await fs.readFile(FIXTURES_PATH, 'utf-8');
+      console.log('[fixture] Returning routes from', FIXTURES_PATH);
+      return NextResponse.json(JSON.parse(raw));
     }
 
     const { start, targetDistance, alternatives, preferences } = parsed.data;
@@ -61,6 +76,13 @@ export async function POST(request: NextRequest) {
 
     // Step 4: Sort best-first by overall score
     scoredRoutes.sort((a, b) => b.score.overall - a.score.overall);
+
+    // DEV: Save this response as fixture data for future use
+    if (process.env.CAPTURE_FIXTURES === 'true') {
+      await fs.mkdir(path.dirname(FIXTURES_PATH), { recursive: true });
+      await fs.writeFile(FIXTURES_PATH, JSON.stringify({ routes: scoredRoutes }, null, 2));
+      console.log('[fixture] Captured routes to', FIXTURES_PATH);
+    }
 
     return NextResponse.json({ routes: scoredRoutes });
   } catch (error) {
