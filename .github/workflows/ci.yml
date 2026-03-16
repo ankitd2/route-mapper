@@ -13,9 +13,9 @@ name: CI
 
 on:
   push:
-    branches: [main, 'feature/**', 'phase-*']
+    branches: [main]        # runs after a PR is merged to main
   pull_request:
-    branches: [main]
+    branches: [main]        # runs on every PR update (the useful check)
 
 jobs:
   ci:
