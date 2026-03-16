@@ -39,7 +39,7 @@ jobs:
         run: npm run lint
 
       - name: Test
-        run: npm test -- --run --passWithNoTests   # --run = single pass, no watch mode
+        run: npm test -- --run   # --run = single pass, no watch mode (--passWithNoTests already in package.json)
 
       - name: Build
         run: npm run build
