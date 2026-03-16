@@ -10,8 +10,8 @@ export const DEFAULT_ZOOM = 13;
 
 /** Route distance bounds enforced by Zod schema and slider UI (meters) */
 export const MIN_DISTANCE_METERS = 500; // ~0.3 mi
-export const MAX_DISTANCE_METERS = 50_000; // ~31 mi
-export const DEFAULT_DISTANCE_METERS = 5_000; // ~3.1 mi
+export const MAX_DISTANCE_METERS = 50000; // ~31 mi
+export const DEFAULT_DISTANCE_METERS = 5000; // ~3.1 mi
 
 /** Colors assigned to routes in order (blue, green, amber, red, purple) */
 export const ROUTE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'] as const;
